@@ -1,30 +1,83 @@
-# Sayna React Voice Chat Example
+# Sayna React Voice Chat
 
-A React + TypeScript + Vite example demonstrating real-time voice chat using the [Sayna JS SDK](../../saysdk/js-sdk/README.md) and LiveKit data messaging.
+A React + TypeScript + Vite frontend for real-time voice conversations using the [Sayna JS SDK](https://github.com/saynaai/saysdk/tree/main/js-sdk).
 
-## Overview
-
-This example is a **client-only** application that connects to a LiveKit room via the Sayna JS SDK. It requires a separate backend service to generate LiveKit access tokens.
-
-### Architecture
+## Architecture
 
 ```
-┌────────────────────┐         ┌────────────────────┐         ┌────────────────────┐
-│   React Frontend   │  POST   │   Your Backend     │  REST   │   Sayna Server     │
-│   (this example)   │────────>│   Token Endpoint   │────────>│   /livekit/token   │
-│                    │         │                    │         │                    │
-└─────────┬──────────┘         └────────────────────┘         └────────────────────┘
-          │
-          │ WebSocket
-          │ (LiveKit)
-          ▼
-┌────────────────────┐
-│   LiveKit Server   │
-│   (audio + data)   │
-└────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              Browser                                        │
+│                                                                             │
+│   ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     │
+│   │ Connection      │     │ Chat Panel       │     │ Audio           │     │
+│   │ Panel           │     │                  │     │ Playback        │     │
+│   │                 │     │  Messages        │     │                 │     │
+│   │ [Room Name]     │     │  ┌──────────┐   │     │  <audio>        │     │
+│   │ [Your Name]     │     │  │ User: Hi │   │     │  element        │     │
+│   │                 │     │  │ AI: Hello│   │     │                 │     │
+│   │ [Call] [Hang Up]│     │  └──────────┘   │     │                 │     │
+│   └────────┬────────┘     └────────┬────────┘     └────────┬────────┘     │
+│            │                       │                       │              │
+│            └───────────────────────┼───────────────────────┘              │
+│                                    │                                       │
+│                          ┌─────────▼─────────┐                            │
+│                          │   Sayna JS SDK    │                            │
+│                          │   (SaynaClient)   │                            │
+│                          └─────────┬─────────┘                            │
+└────────────────────────────────────┼────────────────────────────────────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    │                │                │
+                    ▼                ▼                ▼
+            ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+            │  Backend     │ │  LiveKit     │ │  Sayna       │
+            │  /start      │ │  Server      │ │  (via server)│
+            │  (token)     │ │  (audio)     │ │              │
+            └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-**Key point**: The browser uses LiveKit only. Sayna's WebSocket API (`/ws`) is server-to-server and not used in this client application.
+## How It Works
+
+```
+    User clicks "Call"
+           │
+           ▼
+┌─────────────────────────┐
+│ 1. Fetch token from     │
+│    backend /start       │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│ 2. Connect to LiveKit   │
+│    with token           │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│ 3. Publish microphone   │
+│    (user grants access) │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐         ┌─────────────────────────┐
+│ 4. User speaks          │ ──────> │ Backend VoiceAgent      │
+│    (mic audio sent)     │         │ processes speech        │
+└─────────────────────────┘         └───────────┬─────────────┘
+                                                │
+            ┌───────────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│ 5. AI response plays    │
+│    through audio element│
+└─────────────────────────┘
+```
+
+## Prerequisites
+
+- Node.js 18+
+- A running backend server (see [nestjs-ai-sdk-server](../nestjs-ai-sdk-server/))
 
 ## Quick Start
 
@@ -32,225 +85,119 @@ This example is a **client-only** application that connects to a LiveKit room vi
 # Install dependencies
 npm install
 
+# Copy environment template
+cp .env.example .env
+
+# Configure API_ENDPOINT (see below)
+
 # Start development server
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+App runs at `http://localhost:5173`.
 
-## Configuration
+## Environment Variables
 
-### Environment Variables
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `API_ENDPOINT` | Yes | Backend URL for token generation |
 
-Create a `.env` file in this directory:
+### Example `.env`
 
 ```bash
-# Required: Your backend token endpoint URL
-API_ENDPOINT=https://your-backend.example.com/api/token
+API_ENDPOINT=http://localhost:4000/start
 ```
 
-The `API_ENDPOINT` must point to your backend service that generates LiveKit tokens.
+## Running with Backend
 
-### Token Endpoint Requirements
+```
+┌─────────────────┐                    ┌─────────────────┐
+│  This App       │   POST /start      │  NestJS Server  │
+│  localhost:5173 │  ───────────────>  │  localhost:4000 │
+│                 │  <───────────────  │                 │
+│                 │   { token, url }   │                 │
+└─────────────────┘                    └─────────────────┘
+```
 
-Your backend token endpoint must:
+**Steps:**
 
-1. Accept a POST request with this JSON body:
-   ```json
-   {
-     "room_name": "my-room",
-     "participant_name": "John Doe",
-     "participant_identity": "user-123"
-   }
+1. Start the backend first:
+   ```bash
+   cd ../nestjs-ai-sdk-server
+   npm run start:dev
    ```
 
-2. Call the Sayna API's `POST /livekit/token` endpoint
-
-3. Return a response with `token` and `liveUrl`:
-   ```json
-   {
-     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-     "liveUrl": "wss://livekit.example.com"
-   }
+2. Configure this app's `.env`:
+   ```bash
+   API_ENDPOINT=http://localhost:4000/start
    ```
 
-**Important**: The Sayna REST API returns `livekit_url` (snake_case), but the JS SDK expects `liveUrl` (camelCase). Your backend must map this field:
+3. Start this app:
+   ```bash
+   npm run dev
+   ```
 
-```javascript
-// In your backend
-const saynaResponse = await fetch('https://sayna-api/livekit/token', { ... });
-const data = await saynaResponse.json();
-
-// Map livekit_url to liveUrl for the JS SDK
-return {
-  token: data.token,
-  liveUrl: data.livekit_url  // <-- Mapping here
-};
-```
-
-The example code in `src/lib/saynaClient.ts` handles this mapping automatically for direct Sayna API responses:
-
-```typescript
-const tokenResponse: TokenResponse = {
-  token: data.token,
-  liveUrl: data.livekit_url || data.liveUrl,  // Accept either format
-};
-```
-
-## Call Mode (Audio + Chat)
-
-- Connects to the LiveKit room **with** microphone publishing
-- Full voice communication plus chat messaging
-- Browser will prompt for microphone permission
-- Audio from remote participants plays through the hidden `<audio>` element
+4. Open http://localhost:5173 in your browser
 
 ## Features
 
-### LiveKit Data Messaging
-
-Chat messages are sent over LiveKit's data channel with this schema:
-
-```typescript
-interface DataChannelMessage {
-  message: string;      // The text content
-  topic: string;        // Routing key (e.g., "chat", "status")
-  role: "user" | "ai";  // Message sender role
-  timestamp?: number;   // Unix timestamp in milliseconds
-}
 ```
-
-The `topic` field enables message routing:
-- `"chat"` - Main conversation messages (displayed in chat UI)
-- `"status"` - Status updates (displayed as system messages)
-- Other topics are ignored (extend as needed)
-
-### Audio Playback
-
-Remote audio is automatically attached to a hidden `<audio>` element. If the browser blocks autoplay, a banner appears prompting the user to enable audio.
-
-### Error Handling
-
-The UI displays clear error messages for:
-- Token fetch failures (API endpoint issues)
-- Network failures (LiveKit connection problems)
-- Microphone permission denial
-- Message send failures (with retry option)
+┌─────────────────────────────────────────────────────────────┐
+│                     Voice Chat Features                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  [x] Real-time voice communication via LiveKit              │
+│  [x] Live transcription display (interim + final)           │
+│  [x] AI response streaming with typing indicator            │
+│  [x] Audio playback with autoplay handling                  │
+│  [x] Microphone toggle (mute/unmute)                        │
+│  [x] Connection status indicators                           │
+│  [x] Chat message history                                   │
+│  [x] Error handling with retry options                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
 ```
 src/
-├── App.tsx                    # Main application component
+├── App.tsx                  # Main application
 ├── lib/
-│   ├── saynaClient.ts         # SaynaClient wrapper with token handling
-│   └── types.ts               # TypeScript interfaces
+│   ├── saynaClient.ts       # SDK wrapper with token handling
+│   └── types.ts             # TypeScript interfaces
 └── components/
-    ├── connection-panel.tsx   # Room config and connection controls
-    └── chat-panel.tsx         # Message list and input
+    ├── connection-panel.tsx # Room config & controls
+    └── chat-panel.tsx       # Message list & input
 ```
 
-## Best Practices
+## Data Flow
 
-### SDK Usage
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Message Flow                                     │
+│                                                                          │
+│   User speaks        STT transcript       AI response        TTS audio  │
+│       │                   │                   │                   │     │
+│       ▼                   ▼                   ▼                   ▼     │
+│   [Microphone] ──> [Data Channel] ──> [Data Channel] ──> [Audio Element]│
+│       │           (user message)     (AI message)                       │
+│       │                   │                   │                          │
+│       │                   ▼                   ▼                          │
+│       │              ┌────────────────────────────┐                     │
+│       │              │      Chat Panel            │                     │
+│       │              │                            │                     │
+│       │              │  User: "Hello"             │                     │
+│       │              │  AI: "Hi! How can I help?" │                     │
+│       │              └────────────────────────────┘                     │
+│       │                                                                  │
+│       └──────────────────────────────────────────────────────────────>  │
+│                        LiveKit audio stream                              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-1. **Connect on user action only**
-   - Never auto-connect on page load
-   - Always wait for explicit user interaction (button click)
-   - This avoids permission prompts before the user is ready
+## Related
 
-2. **Always disconnect on unmount**
-   ```typescript
-   useEffect(() => {
-     return () => {
-       if (clientRef.current) {
-         clientRef.current.disconnect();
-         clientRef.current = null;
-       }
-     };
-   }, []);
-   ```
-
-3. **Handle microphone permission errors gracefully**
-   - Catch errors from `publishMicrophone()`
-   - Display a clear message explaining what happened
-   - Allow the user to retry or continue without audio
-
-4. **Use HTTPS for token endpoints**
-   - Never expose API keys in browser code
-   - All token generation must happen server-side
-   - Serve your app over HTTPS in production
-
-### Data Messaging
-
-1. **Keep messages small**
-   - LiveKit data channels have size limits
-   - Use concise payloads (< 16KB recommended)
-
-2. **Use topics for routing**
-   - Separate concerns with different topic values
-   - Makes it easy to filter and handle different message types
-
-3. **Include timestamps**
-   - Helps with message ordering
-   - Useful for debugging and analytics
-
-### LiveKit vs Sayna WebSocket
-
-- **Browser apps**: Use LiveKit via the JS SDK (this example)
-- **Server apps**: Use Sayna's WebSocket API (`/ws`) for STT/TTS processing
-
-The browser never connects directly to Sayna's WebSocket endpoint. All voice processing happens server-side.
-
-## QA Checklist
-
-Use this checklist for manual verification:
-
-### Connection Flow
-
-- [ ] **Call** prompts for microphone permission
-- [ ] Connection status badge updates correctly (idle → connecting → connected)
-- [ ] **Disconnect** cleanly returns to idle state
-- [ ] Error states display clear messages
-
-### Microphone
-
-- [ ] Mic toggle enables/disables microphone when connected
-- [ ] Denying permission shows appropriate error message
-- [ ] Mic status badge reflects current state (off/starting/on/error)
-
-### Audio Playback
-
-- [ ] Remote audio plays when participants speak
-- [ ] Blocked playback shows banner with "Click to enable audio" button
-- [ ] Clicking the banner enables audio playback
-
-### Chat Messaging
-
-- [ ] Messages send successfully when connected
-- [ ] Received messages appear in chat list with correct role (user/assistant/system)
-- [ ] Failed messages show retry option
-- [ ] Retry successfully resends the message
-- [ ] Sending disabled when not connected
-- [ ] Timestamps display correctly
-
-### Error Handling
-
-- [ ] Token fetch failure shows clear error
-- [ ] Network disconnection updates status and shows message
-- [ ] Invalid room name shows validation error
-- [ ] Connection timeout handled gracefully
-
-### Browser Compatibility
-
-- [ ] Chrome: Full functionality
-- [ ] Firefox: Full functionality
-- [ ] Safari: Audio playback may require user gesture
-- [ ] Edge: Full functionality
-
-## References
-
-- [Sayna JS SDK Documentation](../../saysdk/js-sdk/README.md)
-- [JS SDK Best Practices](../.cursor/rules/js-sdk.mdc)
-- [Sayna API Reference](../../sayna/docs/api-reference.md)
-- [LiveKit Integration Guide](../../sayna/docs/livekit_integration.md)
-- [Examples CLAUDE.md](../CLAUDE.md)
+- [NestJS AI Server](../nestjs-ai-sdk-server/) - Backend for this UI
+- [Sayna JS SDK](https://github.com/saynaai/saysdk/tree/main/js-sdk) - Client SDK used here
+- [Sayna](https://github.com/saynaai/sayna) - Voice processing platform

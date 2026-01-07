@@ -1,0 +1,418 @@
+---
+description: Guidelines for building examples using the Sayna Python SDK (sayna-client)
+globs: ["**/*.py"]
+alwaysApply: false
+---
+
+# Sayna Python SDK Development Guidelines
+
+## SDK Location and References
+
+- **SDK Source**: `../saysdk/python-sdk/`
+- **Package Name**: `sayna-client`
+- **README Documentation**: `../saysdk/python-sdk/README.md`
+- **Client Implementation**: `../saysdk/python-sdk/src/sayna_client/client.py`
+- **HTTP Client Methods**: `../saysdk/python-sdk/src/sayna_client/http_client.py`
+- **Type Definitions (Pydantic)**: `../saysdk/python-sdk/src/sayna_client/types.py`
+- **Error Classes**: `../saysdk/python-sdk/src/sayna_client/errors.py`
+- **Webhook Receiver**: `../saysdk/python-sdk/src/sayna_client/webhook_receiver.py`
+- **Public Documentation**: https://docs.sayna.ai
+
+## Requirements
+
+- Python 3.9 or higher
+- aiohttp >= 3.9.0
+- pydantic >= 2.0.0
+
+## Installation
+
+```bash
+pip install sayna-client
+```
+
+For faster installation, consider using uv:
+```bash
+pip install uv
+uv pip install sayna-client
+```
+
+## Core Architecture Pattern
+
+The Python SDK provides async/await API with dual access modes:
+
+1. **REST API Methods** - Standalone HTTP endpoints (no WebSocket required)
+2. **WebSocket API Methods** - Real-time streaming (requires active connection)
+
+### Async Pattern
+
+**All SDK methods are async** and must be called with `await`:
+
+```python
+import asyncio
+from sayna_client import SaynaClient
+
+async def main():
+    client = SaynaClient(...)
+    await client.connect()
+    await client.speak("Hello")
+    await client.disconnect()
+
+asyncio.run(main())
+```
+
+## SDK Imports
+
+```python
+from sayna_client import (
+    # Main client
+    SaynaClient,
+    WebhookReceiver,
+
+    # Configuration types
+    STTConfig,
+    TTSConfig,
+    LiveKitConfig,
+
+    # Response types
+    STTResult,
+    VoiceDescriptor,
+    LiveKitTokenResponse,
+    SipHook,
+    SipHooksResponse,
+    HealthResponse,
+
+    # Webhook types
+    WebhookSIPOutput,
+    WebhookSIPParticipant,
+    WebhookSIPRoom,
+
+    # Error classes
+    SaynaValidationError,
+    SaynaConnectionError,
+    SaynaHttpError,
+    SaynaNotConnectedError,
+)
+```
+
+## Configuration Types (Pydantic Models)
+
+All configuration types are Pydantic models with full validation.
+
+### STTConfig (Speech-to-Text)
+
+```python
+STTConfig(
+    provider="deepgram",      # Required: STT provider
+    model="nova-2",           # Required: Model identifier
+    language="en-US",         # Language code
+    sample_rate=16000,        # Audio sample rate
+    channels=1,               # Audio channels
+    punctuation=True,         # Enable punctuation
+    encoding="linear16"       # Audio encoding
+)
+```
+
+### TTSConfig (Text-to-Speech)
+
+```python
+TTSConfig(
+    provider="elevenlabs",           # Required: TTS provider
+    model="eleven_turbo_v2",         # Required: Model identifier
+    voice_id="21m00Tcm4TlvDq8ikWAM", # Voice identifier
+    speaking_rate=1.0,               # Speed (0.25-4.0)
+    audio_format="mp3",              # Output format
+    sample_rate=24000,               # Sample rate
+    pronunciations=[]                # Custom pronunciations
+)
+```
+
+### LiveKitConfig (Optional)
+
+```python
+LiveKitConfig(
+    room_name="my-room",                      # Required: Room identifier
+    sayna_participant_identity="sayna-ai",    # AI participant identity
+    sayna_participant_name="Sayna AI",        # AI display name
+    listen_participants=["user-123"],         # Specific participants to listen
+    enable_recording=False                    # Enable recording
+)
+```
+
+## Client Initialization
+
+```python
+client = SaynaClient(
+    url="https://api.sayna.ai",           # Server URL
+    stt_config=STTConfig(...),            # STT configuration
+    tts_config=TTSConfig(...),            # TTS configuration
+    livekit_config=LiveKitConfig(...),    # Optional: LiveKit config
+    without_audio=False,                   # Disable audio streaming
+    api_key="your-api-key"                 # API authentication
+)
+```
+
+## Event Callback Registration
+
+**CRITICAL**: Register callbacks BEFORE calling `connect()`.
+
+```python
+# STT transcription results
+client.register_on_stt_result(lambda result: print(result.transcript))
+
+# TTS audio data (bytes)
+client.register_on_tts_audio(lambda audio: handle_audio(audio))
+
+# Error messages
+client.register_on_error(lambda error: print(f"Error: {error}"))
+
+# Participant messages
+client.register_on_message(lambda msg: print(f"Message: {msg}"))
+
+# Disconnection events
+client.register_on_participant_disconnected(lambda p: print(f"Left: {p}"))
+
+# TTS completion
+client.register_on_tts_playback_complete(lambda: print("TTS done"))
+
+# SIP transfer errors
+client.register_on_sip_transfer_error(lambda err: print(f"Transfer failed: {err}"))
+```
+
+## REST API Methods (No WebSocket Required)
+
+These methods work without an active WebSocket connection:
+
+### Health Check
+```python
+health = await client.health()
+print(health.status)  # "OK"
+```
+
+### Voice Catalog
+```python
+voices = await client.get_voices()
+for provider, voice_list in voices.items():
+    print(f"{provider}: {[v.name for v in voice_list]}")
+```
+
+### REST TTS Synthesis
+```python
+audio_data, headers = await client.speak_rest("Hello", tts_config)
+# audio_data: bytes, headers: dict with Content-Type, x-audio-format, etc.
+```
+
+### LiveKit Token
+```python
+token_info = await client.get_livekit_token(
+    room_name="my-room",
+    participant_name="John",
+    participant_identity="user-123"
+)
+print(token_info.token, token_info.livekit_url)
+```
+
+### LiveKit Room Management
+```python
+# List accessible rooms
+rooms = await client.get_livekit_rooms()
+
+# Get room details
+room = await client.get_livekit_room("my-room")
+
+# Remove participant
+await client.remove_livekit_participant("my-room", "user-123")
+
+# Mute participant track
+await client.mute_livekit_participant_track("my-room", "user-123", "track-sid", True)
+```
+
+### SIP Hooks Management
+```python
+# Get current hooks
+hooks = await client.get_sip_hooks()
+
+# Set hooks
+from sayna_client import SipHook
+await client.set_sip_hooks([
+    SipHook(host="example.com", url="https://webhook.example.com", auth_id="tenant-123")
+])
+
+# Delete hooks
+await client.delete_sip_hooks(["example.com"])
+```
+
+### SIP Calling
+```python
+# Outbound call
+result = await client.sip_call(SIPCallRequest(
+    room_name="call-room",
+    participant_name="John",
+    participant_identity="caller-123",
+    from_phone_number="+15105550123",
+    to_phone_number="+15551234567"
+))
+
+# Transfer call (REST)
+await client.sip_transfer_rest("call-room", "sip-participant", "+15559876543")
+```
+
+### Download Recording
+```python
+audio_bytes = await client.get_recording("stream-uuid")
+```
+
+## WebSocket API Methods (Requires Connection)
+
+### Connection Lifecycle
+```python
+await client.connect()       # Connect and wait for ready
+# ... use client ...
+await client.disconnect()    # Clean up
+```
+
+### TTS Operations
+```python
+# Queue speech
+await client.speak("Hello world")
+await client.speak("Important", flush=True, allow_interruption=False)
+
+# Clear TTS queue
+await client.clear()
+
+# Flush TTS buffer
+await client.tts_flush(allow_interruption=True)
+```
+
+### STT Operations
+```python
+# Send audio for transcription
+await client.on_audio_input(audio_bytes)
+```
+
+### Messaging
+```python
+await client.send_message(
+    message="Hello",
+    role="user",
+    topic="messages",
+    debug={"custom": "data"}
+)
+```
+
+### SIP Transfer (WebSocket)
+```python
+await client.sip_transfer("+15559876543")
+```
+
+## Client Properties
+
+After connection and ready state:
+
+```python
+client.ready                      # True when ready to send/receive
+client.connected                  # True when WebSocket connected
+client.livekit_room_name          # Room name from server
+client.livekit_url                # LiveKit server URL
+client.sayna_participant_identity # AI participant identity
+client.sayna_participant_name     # AI participant display name
+```
+
+## Webhook Receiver
+
+For receiving SIP event webhooks with HMAC-SHA256 verification:
+
+```python
+from sayna_client import WebhookReceiver, SaynaValidationError
+
+receiver = WebhookReceiver("your-secret-min-16-chars")
+# OR use SAYNA_WEBHOOK_SECRET env variable:
+receiver = WebhookReceiver()
+
+try:
+    # CRITICAL: Pass RAW body string, not parsed JSON
+    webhook = receiver.receive(request.headers, raw_body_string)
+    print(f"From: {webhook.from_phone_number}")
+    print(f"Room: {webhook.room.name}")
+except SaynaValidationError as e:
+    return 401, "Invalid signature"
+```
+
+Refer to `../saysdk/python-sdk/README.md` for Flask and FastAPI examples.
+
+## Error Handling
+
+```python
+from sayna_client import (
+    SaynaValidationError,     # Invalid parameters
+    SaynaConnectionError,     # WebSocket issues
+    SaynaHttpError,           # HTTP request failures
+    SaynaNotConnectedError,   # Called before connect()
+)
+
+try:
+    await client.connect()
+except SaynaConnectionError as e:
+    print(f"Connection failed: {e}")
+except SaynaHttpError as e:
+    print(f"HTTP error {e.status}: {e.message}")
+```
+
+## Room Ownership and Access
+
+**IMPORTANT**: The SDK does NOT modify room names. Pass them as-is.
+
+- Room listings are scoped to authenticated context
+- 403 on token requests means room owned by another tenant
+- 404 may mask access denial for security
+- Do not retry with modified room names
+
+## without_audio Mode
+
+When `without_audio=True`:
+- STT and TTS configs become optional
+- Only LiveKit messaging available
+- Useful for data-only participants
+
+## Type Safety
+
+The SDK uses Pydantic models throughout. Enable strict type checking:
+
+```bash
+mypy your_code.py
+```
+
+All response types have full type annotations.
+
+## Best Practices for Python Examples
+
+1. Always read `../saysdk/python-sdk/README.md` for complete API reference
+2. Check `../saysdk/python-sdk/src/sayna_client/types.py` for all Pydantic models
+3. Use async/await consistently throughout
+4. Register callbacks before `connect()`
+5. Handle all error types appropriately
+6. Use context managers or try/finally for cleanup
+7. Use environment variables for API keys
+8. Enable type checking with mypy
+
+## Development Tools
+
+```bash
+# Type checking
+mypy src/
+
+# Linting and formatting
+ruff check .
+ruff format .
+
+# Testing
+pytest
+pytest --cov=sayna_client
+```
+
+## Related Documentation
+
+- `../saysdk/python-sdk/README.md` - SDK documentation
+- `../saysdk/python-sdk/src/sayna_client/types.py` - Type definitions
+- `../sayna/docs/openapi.yaml` - OpenAPI specification
+- `../sayna/docs/websocket.md` - WebSocket protocol
+- https://docs.sayna.ai - Public documentation

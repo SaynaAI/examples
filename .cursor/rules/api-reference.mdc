@@ -1,0 +1,267 @@
+---
+description: Sayna API reference and documentation guidelines for building examples
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Sayna API Reference and Documentation Guidelines
+
+## Documentation Sources
+
+### Primary References
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| OpenAPI Specification | `../sayna/docs/openapi.yaml` | Authoritative REST API schema (OpenAPI 3.1) |
+| WebSocket Protocol | `../sayna/docs/websocket.md` | WebSocket message formats and flow |
+| API Reference Guide | `../sayna/docs/api-reference.md` | Human-readable API documentation |
+| Authentication | `../sayna/docs/authentication.md` | Auth strategies and JWT handling |
+| LiveKit Integration | `../sayna/docs/livekit_integration.md` | Room management and participant handling |
+| SIP Routing | `../sayna/docs/sip_routing.md` | SIP webhook configuration |
+| Deployment Guide | `../sayna/docs/deployment.md` | Server deployment information |
+
+### Provider-Specific Documentation
+
+Located in `../sayna/docs/`:
+- `deepgram-stt.md` - Deepgram STT provider
+- `google-stt.md` - Google Speech-to-Text
+- `google-tts.md` - Google Text-to-Speech
+- `elevenlabs-tts.md` - ElevenLabs TTS
+- `cartesia-tts.md` - Cartesia TTS
+- `deepgram-tts.md` - Deepgram TTS
+
+### Public Documentation
+
+- **Website**: https://docs.sayna.ai
+- **Quickstart**: `../docs/quickstart.mdx`
+- **Architecture Guide**: `../docs/guides/architecture.mdx`
+- **Authentication Guide**: `../docs/guides/authentication.mdx`
+- **Operations Guide**: `../docs/guides/operations.mdx`
+- **Twilio SIP Guide**: `../docs/guides/sip-twilio.mdx`
+
+## REST API Endpoints Summary
+
+### Health and Status
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/` | Health check - returns `{"status": "OK"}` |
+
+### Voice Synthesis
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/voices` | List available TTS voices by provider |
+| POST | `/speak` | Synthesize text to audio (returns binary) |
+
+### LiveKit Management
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/livekit/token` | Generate LiveKit JWT for room access |
+| GET | `/livekit/rooms` | List rooms (scoped to auth context) |
+| GET | `/livekit/rooms/{room_name}` | Get room details with participants |
+| DELETE | `/livekit/participant` | Remove participant from room |
+| POST | `/livekit/participant/mute` | Mute/unmute participant track |
+
+### Recordings
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/recording/{stream_id}` | Download session recording (audio/ogg) |
+
+### SIP Management
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/sip/hooks` | List configured SIP webhooks |
+| POST | `/sip/hooks` | Add or update SIP webhooks |
+| DELETE | `/sip/hooks` | Remove SIP webhooks by host |
+| POST | `/sip/call` | Initiate outbound SIP call |
+| POST | `/sip/transfer` | Transfer active SIP call |
+
+## WebSocket Protocol
+
+### Connection URL
+
+WebSocket connections use the same base URL as REST API, with `/ws` path or protocol upgrade.
+
+### Message Flow
+
+1. **Client sends `config` message** with session configuration
+2. **Server sends `ready` message** when ready to process
+3. **Bidirectional communication** for voice streaming
+
+### Incoming Messages (Client to Server)
+
+| Type | Purpose |
+|------|---------|
+| `config` | Session configuration (STT, TTS, LiveKit) |
+| `speak` | Queue text for TTS synthesis |
+| `clear` | Clear TTS queue |
+| `send_message` | Send data message to room |
+| `sip_transfer` | Initiate SIP call transfer |
+| Binary frames | Raw audio data for STT |
+
+### Outgoing Messages (Server to Client)
+
+| Type | Purpose |
+|------|---------|
+| `ready` | Connection ready, includes stream_id |
+| `stt_result` | Transcription result with confidence |
+| `message` | Participant message received |
+| `participant_disconnected` | Participant left room |
+| `tts_playback_complete` | TTS finished playing |
+| `error` | Error message |
+| `sip_transfer_error` | SIP transfer failed |
+| Binary frames | TTS audio data |
+
+## Authentication
+
+### Bearer Token Authentication
+
+When `AUTH_REQUIRED=true` on server:
+
+```
+Authorization: Bearer <jwt-token>
+```
+
+All endpoints require authentication. Room access is scoped by `metadata.auth_id`.
+
+### Unauthenticated Mode
+
+When `AUTH_REQUIRED=false`:
+- Endpoints work without Authorization header
+- Room isolation still applies via metadata
+
+## Room Ownership Model
+
+### Key Concepts
+
+1. **Room names are not modified** - SDKs pass names as-is
+2. **Metadata-based isolation** - `room.metadata.auth_id` determines ownership
+3. **Scoped listings** - Room lists filtered by authentication context
+4. **Access masking** - 404 may mask unauthorized access (security)
+
+### Token Generation
+
+When requesting a LiveKit token:
+- Room created if it doesn't exist
+- `auth_id` written to room metadata
+- 403 returned if room owned by different tenant
+
+### Access Rules
+
+| Operation | Behavior on Access Denied |
+|-----------|--------------------------|
+| Token request | 403 Forbidden |
+| Room listing | Filtered (room not shown) |
+| Room details | 404 Not Found |
+| Participant removal | 404 Not Found |
+| Mute control | 404 Not Found |
+| SIP transfer | 404 Not Found |
+
+## STT Provider Configuration
+
+### Common Fields
+
+```typescript
+{
+  provider: string;      // "deepgram", "google"
+  model: string;         // Provider-specific model
+  language: string;      // e.g., "en-US"
+  sample_rate: number;   // Hz
+  channels: number;      // 1 = mono
+  encoding: string;      // "linear16", etc.
+  punctuation: boolean;  // Enable punctuation
+}
+```
+
+### Provider-Specific Models
+
+Refer to provider documentation in `../sayna/docs/` for available models.
+
+## TTS Provider Configuration
+
+### Common Fields
+
+```typescript
+{
+  provider: string;       // "elevenlabs", "deepgram", "cartesia", "google"
+  model: string;          // Provider-specific model
+  voice_id?: string;      // Voice identifier
+  speaking_rate?: number; // 0.25 to 4.0
+  audio_format?: string;  // Output format
+  sample_rate?: number;   // Hz
+}
+```
+
+### Pronunciations
+
+Custom word pronunciations:
+```typescript
+{
+  pronunciations: [
+    { word: "API", pronunciation: "A P I" }
+  ]
+}
+```
+
+## Webhook Security
+
+### Signature Verification
+
+Webhooks include HMAC-SHA256 signature in headers:
+- Header: `X-Sayna-Signature`
+- Format: `t=<timestamp>,v1=<signature>`
+- Secret: Minimum 16 characters
+
+### Replay Protection
+
+- Timestamp must be within 5 minutes
+- Constant-time signature comparison
+- Raw body required for verification (not parsed JSON)
+
+## Best Practices for Examples
+
+### Implementation Reference Flow
+
+1. Check `../sayna/docs/openapi.yaml` for endpoint schema
+2. Read `../sayna/docs/websocket.md` for WebSocket format
+3. Review SDK README for language-specific patterns
+4. Test with local development server
+
+### Code Organization
+
+- Separate configuration from business logic
+- Use environment variables for secrets
+- Implement proper error handling
+- Clean up connections on shutdown
+
+### Security Considerations
+
+- Never expose API keys in client code
+- Use HTTPS for all production connections
+- Validate webhook signatures
+- Handle auth errors gracefully
+
+### Audio Handling
+
+- Match sample rates between STT config and audio source
+- Use appropriate encoding for platform
+- Buffer audio appropriately for streaming
+- Handle interruptions in TTS playback
+
+## SDK Cross-Reference
+
+| Feature | Node.js SDK | Python SDK | JS SDK (Browser) |
+|---------|-------------|------------|------------------|
+| REST API | Full | Full | Via backend |
+| WebSocket | Full | Full | N/A (uses LiveKit) |
+| LiveKit client | Server-side | Server-side | Client-side |
+| Webhook receiver | Yes | Yes | N/A |
+| Token generation | Yes | Yes | Via backend |
+
+## Version Policy
+
+Always use the latest SDK versions. Do not pin to specific versions in examples unless required for compatibility.

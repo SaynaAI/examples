@@ -1,0 +1,199 @@
+---
+description: Guidelines for building examples using the Sayna Node.js SDK (@sayna-ai/node-sdk)
+globs: ["**/*.ts", "**/*.js", "**/*.mts", "**/*.mjs"]
+alwaysApply: false
+---
+
+# Sayna Node.js SDK Development Guidelines
+
+## SDK Location and References
+
+- **SDK Source**: `../saysdk/node-sdk/`
+- **Package Name**: `@sayna-ai/node-sdk`
+- **README Documentation**: `../saysdk/node-sdk/README.md`
+- **Type Definitions**: `../saysdk/node-sdk/src/types.ts`
+- **Error Classes**: `../saysdk/node-sdk/src/errors.ts`
+- **Webhook Receiver**: `../saysdk/node-sdk/src/webhook-receiver.ts`
+- **Public Documentation**: https://docs.sayna.ai
+
+## Installation
+
+Install the SDK using npm, yarn, pnpm, or bun:
+
+```bash
+npm install @sayna-ai/node-sdk
+```
+
+## Core Architecture Pattern
+
+The Node.js SDK provides dual API access:
+
+1. **REST API Methods** - Standalone HTTP endpoints (no WebSocket required)
+2. **WebSocket API Methods** - Real-time streaming (requires active connection)
+
+### Connection Flow
+
+1. Create `SaynaClient` instance with URL and configurations
+2. Register event callbacks before connecting
+3. Call `connect()` - establishes WebSocket and sends config
+4. Wait for `ready` state (connect() resolves when ready)
+5. Use API methods for voice interaction
+6. Call `disconnect()` for cleanup
+
+## SDK Imports
+
+Always import from the main package entry point:
+
+```typescript
+import {
+  SaynaClient,
+  WebhookReceiver,
+  // Types
+  STTConfig,
+  TTSConfig,
+  LiveKitConfig,
+  STTResult,
+  VoiceDescriptor,
+  // Errors
+  SaynaValidationError,
+  SaynaConnectionError,
+  SaynaServerError,
+  SaynaNotConnectedError,
+  SaynaNotReadyError
+} from "@sayna-ai/node-sdk";
+```
+
+## Configuration Types
+
+### STTConfig (Speech-to-Text)
+
+Required fields for STT provider configuration:
+- `provider`: Provider name (e.g., "deepgram", "google")
+- `model`: Model identifier
+- `language`: Language code (e.g., "en-US")
+- `sample_rate`: Audio sample rate in Hz
+- `channels`: Number of audio channels
+- `punctuation`: Enable punctuation
+- `encoding`: Audio encoding format
+
+### TTSConfig (Text-to-Speech)
+
+Required fields for TTS provider configuration:
+- `provider`: Provider name (e.g., "elevenlabs", "deepgram", "cartesia")
+- `model`: Model identifier
+
+Optional fields:
+- `voice_id`: Specific voice identifier
+- `speaking_rate`: Speech speed (0.25 to 4.0)
+- `audio_format`: Output format preference
+- `sample_rate`: Sample rate preference
+- `pronunciations`: Custom pronunciation rules
+
+### LiveKitConfig (Optional)
+
+For multi-participant voice rooms:
+- `room_name`: Room identifier (required)
+- `sayna_participant_identity`: AI participant identity
+- `sayna_participant_name`: AI participant display name
+- `listen_participants`: Array of participant identities to listen to
+- `enable_recording`: Enable session recording
+
+## Event Callback Registration
+
+**CRITICAL**: Register all callbacks BEFORE calling `connect()`.
+
+Available callbacks:
+- `registerOnSttResult(callback)` - Transcription results
+- `registerOnTtsAudio(callback)` - TTS audio data (ArrayBuffer)
+- `registerOnError(callback)` - Error messages
+- `registerOnMessage(callback)` - Participant data messages
+- `registerOnParticipantDisconnected(callback)` - Disconnection events
+- `registerOnTtsPlaybackComplete(callback)` - TTS completion notification
+- `registerOnSipTransferError(callback)` - SIP transfer failures
+
+## REST API Methods (No WebSocket Required)
+
+These methods work independently without an active WebSocket connection:
+
+- `health()` - Server health check
+- `getVoices()` - List available TTS voices by provider
+- `speakRest(text, ttsConfig)` - One-shot TTS synthesis
+- `getLiveKitToken(roomName, participantName, participantIdentity)` - Get LiveKit JWT
+- `getLiveKitRooms()` - List accessible rooms
+- `getLiveKitRoom(roomName)` - Get room details
+- `removeLiveKitParticipant(roomName, participantIdentity)` - Remove participant
+- `muteLiveKitParticipantTrack(roomName, participantIdentity, trackSid, muted)` - Mute control
+- `getSipHooks()` - List SIP webhook configurations
+- `setSipHooks(hooks)` - Update SIP webhooks
+- `deleteSipHooks(hosts)` - Remove SIP webhooks
+- `sipCall(request)` - Initiate outbound SIP call
+- `sipTransferRest(roomName, participantIdentity, transferTo)` - REST-based SIP transfer
+- `getRecording(streamId)` - Download session recording
+
+## WebSocket API Methods (Requires Connection)
+
+These methods require an active WebSocket connection:
+
+- `speak(text, flush?, allowInterruption?)` - Queue TTS speech
+- `clear()` - Clear TTS queue
+- `onAudioInput(audioData)` - Send audio for STT
+- `sendMessage(message, role, topic?, debug?)` - Send data message
+- `sipTransfer(transferTo)` - Initiate SIP call transfer
+- `ttsFlush(allowInterruption?)` - Flush TTS buffer
+
+## Error Handling
+
+The SDK provides specific error classes for different failure scenarios:
+
+- `SaynaValidationError` - Invalid parameters or configuration
+- `SaynaConnectionError` - WebSocket connection issues
+- `SaynaServerError` - Server returned an error (includes HTTP status)
+- `SaynaNotConnectedError` - Method called before `connect()`
+- `SaynaNotReadyError` - Method called before receiving `ready` message
+
+Always wrap API calls in try-catch blocks and handle errors appropriately.
+
+## Webhook Receiver Security
+
+When implementing webhook endpoints for SIP events:
+
+1. Use `WebhookReceiver` class for signature verification
+2. Pass raw request body (not parsed JSON) to `receive()` method
+3. Secret must be minimum 16 characters
+4. Timestamp validation prevents replay attacks (5-minute window)
+
+Refer to `../saysdk/node-sdk/README.md` for Express and Fastify examples.
+
+## Room Ownership and Access
+
+**IMPORTANT**: The SDK does NOT rewrite room names. Pass them as-is.
+
+- Room listings are scoped to authenticated context
+- 403 error on token requests means room owned by another tenant
+- 404 responses may mask access denial for security
+- Do not retry failed requests with modified room names
+
+## withoutAudio Mode
+
+When `withoutAudio=true`:
+- STT and TTS configs become optional
+- Only LiveKit messaging functionality available
+- Useful for data-only participants in voice rooms
+
+## Best Practices for Examples
+
+1. Always read `../saysdk/node-sdk/README.md` for complete API reference
+2. Check `../saysdk/node-sdk/src/types.ts` for all type definitions
+3. Register callbacks before `connect()`
+4. Handle all error scenarios with appropriate error classes
+5. Clean up with `disconnect()` when finished
+6. Use environment variables for API keys and secrets
+7. Implement proper audio handling for production use cases
+
+## API Reference
+
+For complete REST API specification, see:
+- `../sayna/docs/openapi.yaml` - OpenAPI 3.1 specification
+- `../sayna/docs/websocket.md` - WebSocket protocol documentation
+- `../sayna/docs/api-reference.md` - Human-readable API guide
+- https://docs.sayna.ai - Public documentation

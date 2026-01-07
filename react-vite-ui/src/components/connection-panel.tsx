@@ -5,14 +5,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { ConnectionStatus, MicStatus, ConnectionConfig } from "@/lib/types";
-import { MessageCircle, Phone, PhoneOff, Mic, MicOff } from "lucide-react";
+import { Phone, PhoneOff, Mic, MicOff } from "lucide-react";
 
 interface ConnectionPanelProps {
   config: ConnectionConfig;
   onConfigChange: (config: ConnectionConfig) => void;
   connectionStatus: ConnectionStatus;
   micStatus: MicStatus;
-  onStartChat: () => void;
   onCall: () => void;
   onDisconnect: () => void;
   onMicToggle: () => void;
@@ -50,7 +49,6 @@ export function ConnectionPanel({
   onConfigChange,
   connectionStatus,
   micStatus,
-  onStartChat,
   onCall,
   onDisconnect,
   onMicToggle,
@@ -124,15 +122,6 @@ export function ConnectionPanel({
 
         {canConnect ? (
           <div className="flex flex-col gap-2">
-            <Button
-              onClick={onStartChat}
-              variant="outline"
-              className="w-full justify-start"
-              disabled={!config.roomName}
-            >
-              <MessageCircle className="mr-2 size-4" />
-              Start Chat
-            </Button>
             <Button
               onClick={onCall}
               variant="default"

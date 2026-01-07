@@ -97,18 +97,7 @@ const tokenResponse: TokenResponse = {
 };
 ```
 
-## Connection Modes
-
-This example provides two ways to connect:
-
-### Start Chat (Text Only)
-
-- Connects to the LiveKit room **without** microphone access
-- Chat messages are sent/received via LiveKit data channels
-- Suitable for text-based interactions with AI agents or other participants
-- Lower permission requirements (no microphone prompt)
-
-### Call (Audio + Chat)
+## Call Mode (Audio + Chat)
 
 - Connects to the LiveKit room **with** microphone publishing
 - Full voice communication plus chat messaging
@@ -218,7 +207,6 @@ Use this checklist for manual verification:
 
 ### Connection Flow
 
-- [ ] **Start Chat** connects without microphone prompt
 - [ ] **Call** prompts for microphone permission
 - [ ] Connection status badge updates correctly (idle → connecting → connected)
 - [ ] **Disconnect** cleanly returns to idle state

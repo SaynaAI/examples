@@ -79,19 +79,17 @@ function App() {
   );
 
   /**
-   * Shared connect logic for both Start Chat and Call flows.
-   * @param withAudio - If true, publishes microphone after connecting
+   * Shared connect logic for Call flow.
+   * Always publishes microphone after connecting.
    */
   const connect = useCallback(
-    async (withAudio: boolean) => {
+    async () => {
       if (actionInFlightRef.current) return;
       actionInFlightRef.current = true;
 
       setError(null);
       setConnectionStatus("connecting");
-      if (withAudio) {
-        setMicStatus("starting");
-      }
+      setMicStatus("starting");
       setPlaybackBlocked(false);
 
       try {
@@ -113,24 +111,19 @@ function App() {
           setPlaybackBlocked(true);
         }
 
-        if (withAudio) {
-          // Publish microphone for Call flow
-          try {
-            await client.publishMicrophone(DEFAULT_MIC_OPTIONS);
-            setMicStatus("on");
-            addMessage("system", "Connected to voice room with microphone enabled");
-          } catch (micError) {
-            // Handle mic permission denial
-            setMicStatus("error");
-            const message =
-              micError instanceof Error
-                ? micError.message
-                : "Failed to enable microphone";
-            setError(message);
-            addMessage("system", `Connected but microphone failed: ${message}`);
-          }
-        } else {
-          addMessage("system", "Connected to chat room");
+        try {
+          await client.publishMicrophone(DEFAULT_MIC_OPTIONS);
+          setMicStatus("on");
+          addMessage("system", "Connected to voice room with microphone enabled");
+        } catch (micError) {
+          // Handle mic permission denial
+          setMicStatus("error");
+          const message =
+            micError instanceof Error
+              ? micError.message
+              : "Failed to enable microphone";
+          setError(message);
+          addMessage("system", `Connected but microphone failed: ${message}`);
         }
       } catch (err) {
         // Clean up on error
@@ -152,14 +145,9 @@ function App() {
     [config, addMessage]
   );
 
-  // Handle Start Chat (text only, no mic)
-  const handleStartChat = useCallback(() => {
-    connect(false);
-  }, [connect]);
-
   // Handle Call (with microphone)
   const handleCall = useCallback(() => {
-    connect(true);
+    connect();
   }, [connect]);
 
   // Handle disconnect
@@ -302,21 +290,16 @@ function App() {
         kind === DataPacket_Kind.LOSSY ? "lossy" : "reliable";
 
       if (messageTopic === "chat") {
-        const lastMessageTimestamp = data.timestamp ?? Date.now();
-        const hasExplicitInterim =
-          data.interim === true || data.isFinal === false;
-        const hasExplicitFinal =
-          data.interim === false || data.isFinal === true;
-        const hasExplicitFlag = hasExplicitInterim || hasExplicitFinal;
+        const isInterim = data.interim === true || data.isFinal === false;
 
         const incomingMessage: ChatMessage = {
           id: generateId(),
           role,
           text: data.message,
-          timestamp: lastMessageTimestamp,
+          timestamp: data.timestamp ?? Date.now(),
           senderId,
           topic: messageTopic,
-          status: hasExplicitInterim ? "streaming" : "sent",
+          status: isInterim ? "streaming" : "sent",
           delivery,
         };
 
@@ -327,51 +310,15 @@ function App() {
 
           const lastIndex = prev.length - 1;
           const lastMessage = prev[lastIndex];
-          const sameSender =
-            senderId && lastMessage.senderId
-              ? senderId === lastMessage.senderId
-              : lastMessage.role === role;
-          const sameTopic = lastMessage.topic === messageTopic;
 
-          const isTextContinuation =
-            lastMessage.text &&
-            (data.message.startsWith(lastMessage.text) ||
-              lastMessage.text.startsWith(data.message));
-
-          const shouldTreatAsInterim =
-            hasExplicitInterim ||
-            (!hasExplicitFlag &&
-              role === "user" &&
-              sameSender &&
-              sameTopic &&
-              isTextContinuation);
-
-          if (sameSender && sameTopic) {
-            if (shouldTreatAsInterim) {
-              const updated = [...prev];
-              updated[lastIndex] = {
-                ...lastMessage,
-                ...incomingMessage,
-                status: "streaming",
-              };
-              return updated;
-            }
-
-            const shouldFinalizeStreaming =
-              hasExplicitFinal ||
-              (!hasExplicitFlag &&
-                lastMessage.status === "streaming" &&
-                data.message === lastMessage.text);
-
-            if (shouldFinalizeStreaming && lastMessage.status === "streaming") {
-              const updated = [...prev];
-              updated[lastIndex] = {
-                ...lastMessage,
-                ...incomingMessage,
-                status: "sent",
-              };
-              return updated;
-            }
+          if (lastMessage.role === role && lastMessage.topic === messageTopic) {
+            const updated = [...prev];
+            updated[lastIndex] = {
+              ...lastMessage,
+              ...incomingMessage,
+              id: lastMessage.id,
+            };
+            return updated;
           }
 
           return [...prev, incomingMessage];
@@ -621,7 +568,6 @@ function App() {
             onConfigChange={setConfig}
             connectionStatus={connectionStatus}
             micStatus={micStatus}
-            onStartChat={handleStartChat}
             onCall={handleCall}
             onDisconnect={handleDisconnect}
             onMicToggle={handleMicToggle}

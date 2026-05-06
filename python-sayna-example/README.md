@@ -32,10 +32,22 @@ A minimal FastAPI service demonstrating the **SIP webhook** flow: a phone call a
 ## Prerequisites
 
 - Python 3.10+
-- A running Sayna server configured with [`../sayna.example.yaml`](../sayna.example.yaml) (the `sip.hooks[0].url` must point at this service)
 - A [Google AI API key](https://aistudio.google.com/apikey) for Gemini
+- Docker (for the local Sayna + LiveKit + LiveKit SIP stack)
 
-## Quick Start
+## Run the Sayna stack
+
+The bundled [`../docker-compose.yml`](../docker-compose.yml) brings up Sayna (port 3002), LiveKit (7880), LiveKit SIP (5063), and Redis. From the `examples/` directory:
+
+```bash
+export DEEPGRAM_API_KEY=...
+export ELEVENLABS_API_KEY=...
+docker compose up
+```
+
+The `sayna` service is configured with [`../sayna.example.yaml`](../sayna.example.yaml), which forwards SIP webhooks to `http://localhost:5002/sayna/webhook` — the route exposed by this example.
+
+## Run the example
 
 ```bash
 cd python-sayna-example
@@ -49,7 +61,7 @@ cp .env.example .env
 python main.py
 ```
 
-The server listens on `http://0.0.0.0:5002` by default.
+The server listens on `http://0.0.0.0:5002` by default. Place a SIP call to the running LiveKit SIP gateway and the agent will answer.
 
 ## Environment Variables
 

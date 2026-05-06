@@ -47,7 +47,20 @@ Sayna is a real-time voice processing platform that provides:
 | Example | Description | Tech Stack |
 |---------|-------------|------------|
 | [react-vite-ui](./react-vite-ui/) | Voice chat frontend | React, TypeScript, Vite, Sayna JS SDK |
-| [nestjs-ai-sdk-server](./nestjs-ai-sdk-server/) | Voice AI backend | NestJS, Vercel AI SDK, Google Gemini, Sayna Node SDK |
+| [nestjs-ai-sdk-server](./nestjs-ai-sdk-server/) | Voice AI backend (browser/`POST /start` flow) | NestJS, Vercel AI SDK, Google Gemini, Sayna Node SDK |
+| [python-sayna-example](./python-sayna-example/) | Voice AI backend (SIP webhook flow) | FastAPI, LangChain, Google Gemini, Sayna Python SDK |
+
+## Run the Sayna stack
+
+All examples assume a local Sayna server. The bundled [`docker-compose.yml`](./docker-compose.yml) brings up Sayna (port 3002), LiveKit (7880), LiveKit SIP (5063), and Redis:
+
+```bash
+export DEEPGRAM_API_KEY=...
+export ELEVENLABS_API_KEY=...
+docker compose up
+```
+
+Then start one of the examples below.
 
 ## Quick Start
 

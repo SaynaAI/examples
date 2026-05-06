@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    sayna_url: str = "http://localhost:3001"
+    sayna_url: str = "http://localhost:3002"
     sayna_api_key: str = "secret-key-1234567890"
     sayna_webhook_secret: str = "hook-secret-1234567890"
 

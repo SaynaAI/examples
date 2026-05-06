@@ -1,3 +1,5 @@
 todo/
 results/
 run-todo.sh
+.env
+tmp/

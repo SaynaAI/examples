@@ -27,6 +27,13 @@ export class SaynaService {
   ) {
     this.saynaUrl = this.configService.get<string>('SAYNA_URL') ?? '';
     this.saynaApiKey = this.configService.get<string>('SAYNA_API_KEY') ?? '';
+
+    const saynaClient = this.createClient('test');
+    console.log(
+      saynaClient.getSipHooks().then((hooks) => {
+        console.log(hooks);
+      }),
+    );
   }
 
   /**

@@ -1,0 +1,121 @@
+x-sayna-environment: &sayna-environment
+  PORT: "3002"
+  LIVEKIT_URL: http://livekit:7880
+  LIVEKIT_PUBLIC_URL: http://127.0.0.1:7880
+  LIVEKIT_API_KEY: sayna-key
+  LIVEKIT_API_SECRET: mAzcMmvg583NYnKfwtzZ4xMC3UspvurHg3eCebOYp5VivoNA5UAElDHg1dIVsxUQ
+  DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+  # - AZURE_SPEECH_SUBSCRIPTION_KEY=azure-speech-subscription-key
+  # - AZURE_SPEECH_REGION=westus
+
+  # - RECORDING_S3_BUCKET=sayna-livekit-recordings
+  # - RECORDING_S3_ENDPOINT=https://s3.us-west-1.amazonaws.com
+  # - RECORDING_S3_REGION=us-west-1
+  # - RECORDING_S3_ACCESS_KEY=access-key
+  # - RECORDING_S3_SECRET_KEY=secret-key
+  # - RECORDING_S3_PREFIX=sayna
+
+x-sayna-volumes: &sayna-volumes
+  - ./tmp/sayna-cache:/app/cache
+  - ./sayna.example.yaml:/app/sayna.yaml
+
+services:
+  sayna-init:
+    image: saynaai/sayna:0.1.13
+    pull_policy: always
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -d /app/cache ] && [ -n "$(ls -A /app/cache 2>/dev/null)" ]; then
+          echo "Sayna cache already present, skipping init."
+          exit 0
+        fi
+        echo "Initializing Sayna cache..."
+        exec /app/sayna init
+    environment:
+      <<: *sayna-environment
+    volumes: *sayna-volumes
+
+  sayna:
+    image: saynaai/sayna:0.1.13
+    pull_policy: always
+    restart: always
+    command: --config /app/sayna.yaml
+    environment:
+      <<: *sayna-environment
+    depends_on:
+      sayna-init:
+        condition: service_completed_successfully
+    ports:
+      - "3002:3002"
+    volumes: *sayna-volumes
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3002" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  livekit:
+    image: livekit/livekit-server:v1.9.9
+    restart: always
+    environment:
+      LIVEKIT_KEYS: "{\"sayna-key\":
+        \"mAzcMmvg583NYnKfwtzZ4xMC3UspvurHg3eCebOYp5VivoNA5UAElDHg1dIVsxUQ\"}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        node_selector:
+          kind: any
+        redis:
+          address: 'redis:6379'
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 60000
+        limit:
+          num_tracks: -1
+          bytes_per_sec: 1_000_000_000
+          subscription_limit_video: 0
+          subscription_limit_audio: 0
+          max_room_name_length: 0
+          max_participant_identity_length: 0
+        webhook:
+          api_key: 'sayna-key'
+          urls:
+            - 'http://sayna:3002/livekit/webhook'
+
+    command: --bind=0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+
+  sip:
+    image: livekit/sip
+    restart: always
+    environment:
+      SIP_CONFIG_BODY: |
+        api_key: 'sayna-key'
+        api_secret: 'mAzcMmvg583NYnKfwtzZ4xMC3UspvurHg3eCebOYp5VivoNA5UAElDHg1dIVsxUQ'
+        ws_url: 'ws://livekit:7880'
+        redis:
+          address: 'redis:6379'
+        sip_port: 5060
+        rtp_port: 10000-20000
+        use_external_ip: false
+        logging:
+          level: debug
+    ports:
+      - "5063:5060/udp"
+      - "5063:5060/tcp"
+
+    depends_on:
+      livekit:
+        condition: service_started
+
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
